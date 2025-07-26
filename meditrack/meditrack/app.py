@@ -1,25 +1,14 @@
 import os
-import certifi
 import bcrypt
 import boto3
 import uuid
 from datetime import datetime
-from bson.objectid import ObjectId
 from flask import Flask, render_template, request, redirect, url_for, flash, send_from_directory, session
 from werkzeug.utils import secure_filename
-from pymongo import MongoClient
-from dotenv import load_dotenv
-import sys
-import json
-
-# Load environment variables
-load_dotenv()
-
-app = Flask(__name__)
 
 # --- Flask Configuration ---
-app.config["MONGO_URI"] = os.getenv("MONGO_URI")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+app = Flask(_name_)
+app.config["SECRET_KEY"] = "d2c8f7a6e5b4c3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9"
 app.config["UPLOAD_FOLDER"] = "uploads"
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 app.config["ALLOWED_EXTENSIONS"] = {'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'}
@@ -27,36 +16,24 @@ app.config["ALLOWED_EXTENSIONS"] = {'pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'}
 # Create uploads folder if not exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# --- MongoDB Setup ---
-try:
-    client = MongoClient(app.config["MONGO_URI"], tls=True, tlsCAFile=certifi.where())
-    client.admin.command("ping")
-    db = client.get_default_database()
-    print("✅ Successfully connected to MongoDB")
-except Exception as e:
-    print("❌ Could not connect to MongoDB")
-    print(f"Error: {str(e)}")
-    db = None
-    sys.exit(1)
-
-# --- AWS Setup ---
-AWS_REGION = os.getenv("AWS_REGION") or "us-east-1"
-SNS_TOPIC_ARN = os.getenv("SNS_TOPIC_ARN")  # e.g., "arn:aws:sns:us-east-1:xxxxx:meditrack_topic"
+# --- AWS Setup (Hardcoded Region & SNS Topic ARN) ---
+AWS_REGION = "us-east-1"
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:xxxxx:meditrack_topic"
 
 # DynamoDB Table Names
 USERS_TABLE = "meditrack_users"
 MEDICINES_TABLE = "meditrack_medicines"
 DOCUMENTS_TABLE = "meditrack_documents"
 
+# AWS Resources
 dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
 sns_client = boto3.client("sns", region_name=AWS_REGION)
 
-# DynamoDB Tables
 users_table = dynamodb.Table(USERS_TABLE)
 medicines_table = dynamodb.Table(MEDICINES_TABLE)
 documents_table = dynamodb.Table(DOCUMENTS_TABLE)
 
-# --- Utilities ---
+# --- Utility Functions ---
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
@@ -65,12 +42,6 @@ def get_user_email():
 
 def get_user_fullname():
     return session.get('full_name')
-
-def sync_to_dynamodb(table, data):
-    try:
-        table.put_item(Item=data)
-    except Exception as e:
-        print(f"[DynamoDB Sync Error] {e}")
 
 def notify_sns(subject, message):
     try:
@@ -85,8 +56,6 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    if not db:
-        return "Database connection error", 500
     if get_user_email():
         return redirect(url_for('home'))
 
@@ -94,11 +63,17 @@ def login():
         email = request.form.get('email')
         password = request.form.get('password')
 
-        user = db.users.find_one({'email': email})
-        if user and bcrypt.checkpw(password.encode(), user['password']):
+        response = users_table.get_item(Key={'email': email})
+        user = response.get('Item')
+
+        if user and bcrypt.checkpw(password.encode(), user['password'].encode()):
             session['email'] = email
             session['full_name'] = user.get('full_name', '')
-            db.users.update_one({'email': email}, {'$set': {'last_login': datetime.utcnow()}})
+            users_table.update_item(
+                Key={'email': email},
+                UpdateExpression="SET last_login = :val1",
+                ExpressionAttributeValues={':val1': datetime.utcnow().isoformat()}
+            )
             return redirect(url_for('home'))
 
         flash("Invalid credentials", "danger")
@@ -107,8 +82,6 @@ def login():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if not db:
-        return "Database error", 500
     if get_user_email():
         return redirect(url_for('home'))
 
@@ -122,22 +95,21 @@ def register():
             flash("Check all fields and confirm password", "danger")
             return redirect(url_for('register'))
 
-        if db.users.find_one({'email': email}):
+        # Check if user exists
+        if 'Item' in users_table.get_item(Key={'email': email}):
             flash("User already exists", "danger")
             return redirect(url_for('register'))
 
-        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+        hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         user_data = {
-            "_id": str(uuid.uuid4()),
-            "full_name": full_name,
             "email": email,
+            "full_name": full_name,
             "password": hashed_pw,
             "created_at": datetime.utcnow().isoformat(),
             "last_login": None
         }
 
-        db.users.insert_one(user_data)
-        sync_to_dynamodb(users_table, {**user_data, "password": user_data["password"].decode()})
+        users_table.put_item(Item=user_data)
         flash("Registration successful", "success")
         return redirect(url_for('login'))
 
@@ -145,16 +117,25 @@ def register():
 
 @app.route('/home')
 def home():
-    if not db or not get_user_email():
+    if not get_user_email():
         return redirect(url_for('login'))
 
-    med_count = db.medicines.count_documents({'user_email': get_user_email()})
-    doc_count = db.documents.count_documents({'user_email': get_user_email()})
+    email = get_user_email()
+    med_count = medicines_table.scan(
+        FilterExpression="user_email = :e", 
+        ExpressionAttributeValues={":e": email}
+    )['Count']
+
+    doc_count = documents_table.scan(
+        FilterExpression="user_email = :e", 
+        ExpressionAttributeValues={":e": email}
+    )['Count']
+
     return render_template('home.html', med_count=med_count, doc_count=doc_count, full_name=get_user_fullname())
 
 @app.route('/add_medicine', methods=['GET', 'POST'])
 def add_medicine():
-    if not db or not get_user_email():
+    if not get_user_email():
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -168,7 +149,7 @@ def add_medicine():
             return redirect(url_for('add_medicine'))
 
         medicine = {
-            "_id": str(uuid.uuid4()),
+            "id": str(uuid.uuid4()),
             "user_email": get_user_email(),
             "name": name,
             "dosage": dosage,
@@ -178,8 +159,7 @@ def add_medicine():
             "last_updated": datetime.utcnow().isoformat()
         }
 
-        db.medicines.insert_one(medicine)
-        sync_to_dynamodb(medicines_table, medicine)
+        medicines_table.put_item(Item=medicine)
         notify_sns("New Medicine Added", f"{name} added by {get_user_email()}")
         flash("Medicine added", "success")
         return redirect(url_for('view_medicines'))
@@ -188,15 +168,18 @@ def add_medicine():
 
 @app.route('/view_medicines')
 def view_medicines():
-    if not db or not get_user_email():
+    if not get_user_email():
         return redirect(url_for('login'))
 
-    medicines = list(db.medicines.find({'user_email': get_user_email()}).sort('added_at', -1))
+    email = get_user_email()
+    response = medicines_table.scan(FilterExpression="user_email = :e", ExpressionAttributeValues={":e": email})
+    medicines = sorted(response.get('Items', []), key=lambda x: x['added_at'], reverse=True)
+
     return render_template('view_medicines.html', medicines=medicines)
 
 @app.route('/add_document', methods=['GET', 'POST'])
 def add_document():
-    if not db or not get_user_email():
+    if not get_user_email():
         return redirect(url_for('login'))
 
     if request.method == 'POST':
@@ -205,12 +188,12 @@ def add_document():
             flash("Invalid file", "danger")
             return redirect(url_for('add_document'))
 
-        filename = secure_filename(file.filename)
+        filename = f"{uuid.uuid4()}_{secure_filename(file.filename)}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
         document = {
-            "_id": str(uuid.uuid4()),
+            "id": str(uuid.uuid4()),
             "user_email": get_user_email(),
             "name": request.form.get('name') or filename,
             "filename": filename,
@@ -220,8 +203,7 @@ def add_document():
             "size": os.path.getsize(filepath)
         }
 
-        db.documents.insert_one(document)
-        sync_to_dynamodb(documents_table, document)
+        documents_table.put_item(Item=document)
         notify_sns("New Document Uploaded", f"{filename} uploaded by {get_user_email()}")
         flash("Document uploaded", "success")
         return redirect(url_for('view_documents'))
@@ -230,10 +212,13 @@ def add_document():
 
 @app.route('/view_documents')
 def view_documents():
-    if not db or not get_user_email():
+    if not get_user_email():
         return redirect(url_for('login'))
 
-    documents = list(db.documents.find({'user_email': get_user_email()}).sort('uploaded_at', -1))
+    email = get_user_email()
+    response = documents_table.scan(FilterExpression="user_email = :e", ExpressionAttributeValues={":e": email})
+    documents = sorted(response.get('Items', []), key=lambda x: x['uploaded_at'], reverse=True)
+
     return render_template('view_documents.html', documents=documents)
 
 @app.route('/download/<filename>')
@@ -250,5 +235,5 @@ def page_not_found(e):
 def server_error(e):
     return "<h1>500</h1><p>Internal server error</p>", 500
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if _name_ == '_main_':
+    app.run(debug=True, host='0.0.0.0', port=5000)
