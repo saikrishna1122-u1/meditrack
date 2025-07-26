@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Add Document{% endblock %}
+{% block content %}
+<h1>Add Medical Document</h1>
+<form method="POST" enctype="multipart/form-data">
+    <label>Document Name (optional):</label>
+    <input type="text" name="name">
+    
+    <label>Select File (PDF, PNG, JPG):</label>
+    <input type="file" name="file" required accept=".pdf,.png,.jpg,.jpeg">
+    
+    <button type="submit">Upload Document</button>
+</form>
+{% endblock %}

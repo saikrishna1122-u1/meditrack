@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}View Medicines{% endblock %}
+{% block content %}
+<h1>Your Medicines</h1>
+<a href="{{ url_for('add_medicine') }}" class="button">Add New Medicine</a>
+
+{% if medicines %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Dosage</th>
+            <th>Added On</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for medicine in medicines %}
+        <tr>
+            <td>{{ medicine.name }}</td>
+            <td>{{ medicine.dosage }}</td>
+            <td>{{ medicine.added_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No medicines added yet.</p>
+{% endif %}
+{% endblock %}

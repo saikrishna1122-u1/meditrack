@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}View Documents{% endblock %}
+{% block content %}
+<h1>Your Medical Documents</h1>
+<a href="{{ url_for('add_document') }}" class="button">Add New Document</a>
+
+{% if documents %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Filename</th>
+            <th>Uploaded On</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for doc in documents %}
+        <tr>
+            <td>{{ doc.name }}</td>
+            <td>{{ doc.filename }}</td>
+            <td>{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td><a href="{{ url_for('download', filename=doc.filename) }}">Download</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No documents uploaded yet.</p>
+{% endif %}
+{% endblock %}

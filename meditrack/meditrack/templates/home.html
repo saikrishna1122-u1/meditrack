@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1>Welcome, {{ full_name }}!</h1>
+<p>Manage your medicines and medical documents in one place.</p>
+<div class="actions">
+    <a href="{{ url_for('add_medicine') }}" class="button">Add Medicine</a>
+    <a href="{{ url_for('add_document') }}" class="button">Add Document</a>
+</div>
+<div class="stats">
+    <p>Total Medicines: <strong>{{ med_count }}</strong></p>
+    <p>Total Documents: <strong>{{ doc_count }}</strong></p>
+</div>
+{% endblock %}

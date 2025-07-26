@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Add Medicine{% endblock %}
+{% block content %}
+<h1>Add Medicine</h1>
+<form method="POST">
+    <label>Medicine Name:</label>
+    <input type="text" name="name" required>
+    
+    <label>Dosage:</label>
+    <input type="text" name="dosage" required>
+    
+    <button type="submit">Add Medicine</button>
+</form>
+{% endblock %}

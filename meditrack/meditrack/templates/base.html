@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MediTrack - {% block title %}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        {% if 'email' in session %}
+            <span>Welcome, {{ session.full_name }}</span>
+            <a href="{{ url_for('home') }}">Home</a>
+            <a href="{{ url_for('add_medicine') }}">Add Medicine</a>
+            <a href="{{ url_for('view_medicines') }}">View Medicines</a>
+            <a href="{{ url_for('add_document') }}">Add Document</a>
+            <a href="{{ url_for('view_documents') }}">View Documents</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}">Register</a>
+        {% endif %}
+    </nav>
+    
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for message in messages %}
+                    <div class="flash">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+    
+    <div class="content">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
