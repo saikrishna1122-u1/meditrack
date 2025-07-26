@@ -18,7 +18,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # --- AWS Setup (Hardcoded Region & SNS Topic ARN) ---
 AWS_REGION = "us-east-1"
-SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:xxxxx:meditrack_topic"
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:715841344567:meditrack"
 
 # DynamoDB Table Names
 USERS_TABLE = "meditrack_users"
